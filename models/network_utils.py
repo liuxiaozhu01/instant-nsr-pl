@@ -138,6 +138,91 @@ class VanillaMLP(nn.Module):
         else:
             return nn.ReLU(inplace=True)
 
+# new add LipshitzMLP
+# from https://arxiv.org/pdf/2202.08345.pdf
+# copy from permutoSDF https://github/RaduAlexandru/permuto_sdf
+class LipshitzMLP(nn.Module):
+    def __init__(self, dim_in, dim_out, config):
+        self.n_neurons, self.n_hidden_layers = config['n_neurons'], config['n_hidden_layers']
+        self.sphere_init, self.weight_norm = config.get('sphere_init', False), config.get('weight_norm', False)
+        self.sphere_init_radius = config.get('sphere_init_radius', 0.5)
+        self.layers = [self.make_linear(dim_in, self.n_neurons, is_first=True, is_last=False), self.make_activation()]
+        for i in range(self.n_hidden_layers - 1):
+            self.layers += [self.make_linear(self.n_neurons, self.n_neurons, is_first=False, is_last=False), self.make_activation()]
+        self.layers += [self.make_linear(self.n_neurons, dim_out, is_first=False, is_last=True)]
+        self.layers = nn.Sequential(*self.layers)
+        self.output_activation = get_activation(config['output_activation'])
+
+        # we make each weight seperately because we want to add the normalize to it
+        self.weights_per_layer=torch.nn.ParameterList()
+        self.biases_per_layer=torch.nn.ParameterList()
+        for i in range(0, len(self.layers), 2): # even idx is linear layer
+            # if i % 2 == 0:
+            self.weights_per_layer.append( self.layers[i].weight  )
+            self.biases_per_layer.append( self.layers[i].bias  )
+
+        self.lipshitz_bound_per_layer=torch.nn.ParameterList()
+        for i in range(0, len(self.layers), 2): # even idx is linear layer
+            # if i % 2 == 0:
+            max_w= torch.max(torch.sum(torch.abs(self.weights_per_layer[int(i/2)]), dim=1))
+            #we actually make the initial value quite large because we don't want at the beggining to hinder the rgb model in any way. A large c means that the scale will be 1
+            c = torch.nn.Parameter(  torch.ones((1))*max_w*2 ) 
+            self.lipshitz_bound_per_layer.append(c) # trainable Lipschitz bound ki for the each layer
+
+    def make_linear(self, dim_in, dim_out, is_first, is_last):
+        layer = nn.Linear(dim_in, dim_out, bias=True) # network without bias will degrade quality
+        if self.sphere_init:
+            if is_last:
+                torch.nn.init.constant_(layer.bias, -self.sphere_init_radius)
+                torch.nn.init.normal_(layer.weight, mean=math.sqrt(math.pi) / math.sqrt(dim_in), std=0.0001)
+            elif is_first:
+                torch.nn.init.constant_(layer.bias, 0.0)
+                torch.nn.init.constant_(layer.weight[:, 3:], 0.0)
+                torch.nn.init.normal_(layer.weight[:, :3], 0.0, math.sqrt(2) / math.sqrt(dim_out))
+            else:
+                torch.nn.init.constant_(layer.bias, 0.0)
+                torch.nn.init.normal_(layer.weight, 0.0, math.sqrt(2) / math.sqrt(dim_out))
+        else:
+            torch.nn.init.constant_(layer.bias, 0.0)
+            torch.nn.init.kaiming_uniform_(layer.weight, nonlinearity='relu')
+        
+        if self.weight_norm:
+            layer = nn.utils.weight_norm(layer)
+        return layer 
+
+    def normalization(self, w, softplus_ci):
+        absrowsum = torch.sum(torch.abs(w), dim=1)
+        # scale = torch.minimum(torch.tensor(1.0), softplus_ci/absrowsum)
+        # this is faster than the previous line since we don't constantly recreate a torch.tensor(1.0)
+        scale = softplus_ci/absrowsum
+        scale = torch.clamp(scale, max=1.0)
+        return w * scale[:,None]
+
+    def lipshitz_bound_full(self):
+        lipshitz_full=1
+        for i in range(0, len(self.layers), 2): # even idx is linear layer
+            lipshitz_full=lipshitz_full*torch.nn.functional.softplus(self.lipshitz_bound_per_layer[int(i/2)])
+
+        return lipshitz_full
+
+    def forward(self, x):
+        # x=self.mlp(x)
+
+        for i in range(len(self.layers)):
+            if i % 2 == 0:
+                weight=self.weights_per_layer[int(i/2)]
+                bias=self.biases_per_layer[int(i/2)]
+
+                weight=self.normalization(weight, torch.nn.functional.softplus(self.lipshitz_bound_per_layer[int(i/2)]))   # W^ of Eq.(9) in permutoSDF paper
+
+                x=torch.nn.functional.linear(x, weight, bias)
+            else:
+                x = self.layers[i](x)
+
+        x = output_activation(x)
+
+        return x
+
 
 def sphere_init_tcnn_network(n_input_dims, n_output_dims, config, network):
     rank_zero_debug('Initialize tcnn MLP to approximately represent a sphere.')

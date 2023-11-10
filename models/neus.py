@@ -264,6 +264,10 @@ class NeuSModel(BaseModel):
                 out.update({
                     'sdf_laplace_samples': sdf_laplace
                 })
+            # if self.config.texture.mlp_network_config.otype == 'LipshitzMLP':
+            #     out.update({
+            #         'lipshitz_bound_full': self.texture.network.lipshitz_bound_full()
+            #     })
 
         if self.config.learned_background:
             out_bg = self.forward_bg_(rays)

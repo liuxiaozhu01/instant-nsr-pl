@@ -33,7 +33,12 @@ class VolumeRadiance(nn.Module):
         update_module_step(self.encoding, epoch, global_step)
 
     def regularizations(self, out):
-        return {}
+        reg = {}
+        if self.config.mlp_network_config.otype == 'LipshitzMLP':
+            reg.update({
+                'lipshitz_bound_full': self.texture.network.lipshitz_bound_full()
+            })
+        return reg
 
 
 @models.register('volume-color')
