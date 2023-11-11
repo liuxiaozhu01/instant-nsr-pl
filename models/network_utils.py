@@ -143,6 +143,7 @@ class VanillaMLP(nn.Module):
 # copy from permutoSDF https://github/RaduAlexandru/permuto_sdf
 class LipshitzMLP(nn.Module):
     def __init__(self, dim_in, dim_out, config):
+        super().__init__()
         self.n_neurons, self.n_hidden_layers = config['n_neurons'], config['n_hidden_layers']
         self.sphere_init, self.weight_norm = config.get('sphere_init', False), config.get('weight_norm', False)
         self.sphere_init_radius = config.get('sphere_init_radius', 0.5)
@@ -203,7 +204,7 @@ class LipshitzMLP(nn.Module):
         for i in range(0, len(self.layers), 2): # even idx is linear layer
             lipshitz_full=lipshitz_full*torch.nn.functional.softplus(self.lipshitz_bound_per_layer[int(i/2)])
 
-        return lipshitz_full
+        return lipshitz_full.reshape([])    # reshape to scalar
 
     def forward(self, x):
         # x=self.mlp(x)
@@ -219,9 +220,15 @@ class LipshitzMLP(nn.Module):
             else:
                 x = self.layers[i](x)
 
-        x = output_activation(x)
+        x = self.output_activation(x)
 
         return x
+
+    def make_activation(self):
+        if self.sphere_init:
+            return nn.Softplus(beta=100)
+        else:
+            return nn.GELU()
 
 
 def sphere_init_tcnn_network(n_input_dims, n_output_dims, config, network):
@@ -261,6 +268,8 @@ def sphere_init_tcnn_network(n_input_dims, n_output_dims, config, network):
 def get_mlp(n_input_dims, n_output_dims, config):
     if config.otype == 'VanillaMLP':
         network = VanillaMLP(n_input_dims, n_output_dims, config_to_primitive(config))
+    elif config.otype == 'LipshitzMLP':
+        network = LipshitzMLP(n_input_dims, n_output_dims, config_to_primitive(config))
     else:
         with torch.cuda.device(get_rank()):
             network = tcnn.Network(n_input_dims, n_output_dims, config_to_primitive(config))

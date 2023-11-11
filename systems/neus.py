@@ -95,13 +95,16 @@ class NeuSSystem(BaseSystem):
             train_num_rays = int(self.train_num_rays * (self.train_num_samples / out['num_samples_full'].sum().item()))        
             self.train_num_rays = min(int(self.train_num_rays * 0.9 + train_num_rays * 0.1), self.config.model.max_train_num_rays)
 
+        a = out['comp_rgb_full'][out['rays_valid_full'][...,0]]
+        b = batch['rgb'][out['rays_valid_full'][...,0]]
+
         loss_rgb_mse = F.mse_loss(out['comp_rgb_full'][out['rays_valid_full'][...,0]], batch['rgb'][out['rays_valid_full'][...,0]])
         self.log('train/loss_rgb_mse', loss_rgb_mse)
         loss += loss_rgb_mse * self.C(self.config.system.loss.lambda_rgb_mse)
 
         loss_rgb_l1 = F.l1_loss(out['comp_rgb_full'][out['rays_valid_full'][...,0]], batch['rgb'][out['rays_valid_full'][...,0]])
         self.log('train/loss_rgb', loss_rgb_l1)
-        loss += loss_rgb_l1 * self.C(self.config.system.loss.lambda_rgb_l1)        
+        loss += loss_rgb_l1 * self.C(self.config.system.loss.lambda_rgb_l1)
 
         loss_eikonal = ((torch.linalg.norm(out['sdf_grad_samples'], ord=2, dim=-1) - 1.)**2).mean()
         self.log('train/loss_eikonal', loss_eikonal)

@@ -111,10 +111,13 @@ class DTUDatasetBase():
                 img = img.resize(self.img_wh, Image.BICUBIC)
                 img = TF.to_tensor(img).permute(1, 2, 0)[...,:3]
 
-                mask_path = os.path.join(mask_dir, f'{i:03d}.png')
-                mask = Image.open(mask_path).convert('L') # (H, W, 1)
-                mask = mask.resize(self.img_wh, Image.BICUBIC)
-                mask = TF.to_tensor(mask)[0]
+                if self.apply_mask:
+                    mask_path = os.path.join(mask_dir, f'{i:03d}.png')
+                    mask = Image.open(mask_path).convert('L') # (H, W, 1)
+                    mask = mask.resize(self.img_wh, Image.BICUBIC)
+                    mask = TF.to_tensor(mask)[0]
+                else:
+                    mask = torch.ones((h, w), dtype=torch.float32)
 
                 self.all_fg_masks.append(mask) # (h, w)
                 self.all_images.append(img)

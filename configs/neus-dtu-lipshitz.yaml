@@ -4,8 +4,8 @@ seed: 42
 
 dataset:
   name: dtu
-  root_dir: ./load/DTU-neus/dtu_scan63
-  cameras_file: cameras_sphere.npz
+  root_dir: /remote-home/share/datasets/DTU/scan24 # ./load/DTU-neus/dtu_scan63
+  cameras_file: cameras.npz # cameras_sphere.npz
   img_downscale: 2 # specify training image size by either img_wh or img_downscale
   n_test_traj_steps: 60
   apply_mask: false
@@ -111,13 +111,13 @@ system:
     lambda_rgb_l1: 1.
     lambda_mask: 0.0
     lambda_eikonal: 0.1
-    lambda_curvature: 0.05
+    lambda_curvature: 0.
     lambda_sparsity: 0.0
     lambda_distortion: 0.0
     lambda_distortion_bg: 0.0
     lambda_opaque: 0.0
     sparsity_scale: 1.
-    lambda_lipshitz: 3.e-4
+    lambda_lipshitz_bound_full: 3.e-4
   optimizer:
     name: AdamW
     args:

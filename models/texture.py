@@ -36,7 +36,7 @@ class VolumeRadiance(nn.Module):
         reg = {}
         if self.config.mlp_network_config.otype == 'LipshitzMLP':
             reg.update({
-                'lipshitz_bound_full': self.texture.network.lipshitz_bound_full()
+                'lipshitz_bound_full': self.network.lipshitz_bound_full()
             })
         return reg
 
