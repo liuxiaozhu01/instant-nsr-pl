@@ -64,7 +64,7 @@ model:
     mlp_network_config:
       otype: LipshitzMLP
       activation: GeLU
-      output_activation: sigmoid
+      output_activation: none
       n_neurons: 64
       n_hidden_layers: 2
     color_activation: sigmoid

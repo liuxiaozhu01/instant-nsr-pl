@@ -95,65 +95,62 @@ class NeuSSystem(BaseSystem):
             train_num_rays = int(self.train_num_rays * (self.train_num_samples / out['num_samples_full'].sum().item()))        
             self.train_num_rays = min(int(self.train_num_rays * 0.9 + train_num_rays * 0.1), self.config.model.max_train_num_rays)
 
-        a = out['comp_rgb_full'][out['rays_valid_full'][...,0]]
-        b = batch['rgb'][out['rays_valid_full'][...,0]]
-
         loss_rgb_mse = F.mse_loss(out['comp_rgb_full'][out['rays_valid_full'][...,0]], batch['rgb'][out['rays_valid_full'][...,0]])
-        self.log('train/loss_rgb_mse', loss_rgb_mse)
+        self.log('train/loss_rgb_mse', loss_rgb_mse, sync_dist=True)
         loss += loss_rgb_mse * self.C(self.config.system.loss.lambda_rgb_mse)
 
         loss_rgb_l1 = F.l1_loss(out['comp_rgb_full'][out['rays_valid_full'][...,0]], batch['rgb'][out['rays_valid_full'][...,0]])
-        self.log('train/loss_rgb', loss_rgb_l1)
+        self.log('train/loss_rgb', loss_rgb_l1, sync_dist=True)
         loss += loss_rgb_l1 * self.C(self.config.system.loss.lambda_rgb_l1)
 
         loss_eikonal = ((torch.linalg.norm(out['sdf_grad_samples'], ord=2, dim=-1) - 1.)**2).mean()
-        self.log('train/loss_eikonal', loss_eikonal)
+        self.log('train/loss_eikonal', loss_eikonal, sync_dist=True)
         loss += loss_eikonal * self.C(self.config.system.loss.lambda_eikonal)
         
         opacity = torch.clamp(out['opacity'].squeeze(-1), 1.e-3, 1.-1.e-3)
         loss_mask = binary_cross_entropy(opacity, batch['fg_mask'].float())
-        self.log('train/loss_mask', loss_mask)
+        self.log('train/loss_mask', loss_mask, sync_dist=True)
         loss += loss_mask * (self.C(self.config.system.loss.lambda_mask) if self.dataset.has_mask else 0.0)
 
         loss_opaque = binary_cross_entropy(opacity, opacity)
-        self.log('train/loss_opaque', loss_opaque)
+        self.log('train/loss_opaque', loss_opaque, sync_dist=True)
         loss += loss_opaque * self.C(self.config.system.loss.lambda_opaque)
 
         loss_sparsity = torch.exp(-self.config.system.loss.sparsity_scale * out['sdf_samples'].abs()).mean()
-        self.log('train/loss_sparsity', loss_sparsity)
+        self.log('train/loss_sparsity', loss_sparsity, sync_dist=True)
         loss += loss_sparsity * self.C(self.config.system.loss.lambda_sparsity)
 
         if self.C(self.config.system.loss.lambda_curvature) > 0:
             assert 'sdf_laplace_samples' in out, "Need geometry.grad_type='finite_difference' to get SDF Laplace samples"
             loss_curvature = out['sdf_laplace_samples'].abs().mean()
-            self.log('train/loss_curvature', loss_curvature)
+            self.log('train/loss_curvature', loss_curvature, sync_dist=True)
             loss += loss_curvature * self.C(self.config.system.loss.lambda_curvature)
 
         # distortion loss proposed in MipNeRF360
         # an efficient implementation from https://github.com/sunset1995/torch_efficient_distloss
         if self.C(self.config.system.loss.lambda_distortion) > 0:
             loss_distortion = flatten_eff_distloss(out['weights'], out['points'], out['intervals'], out['ray_indices'])
-            self.log('train/loss_distortion', loss_distortion)
+            self.log('train/loss_distortion', loss_distortion, sync_dist=True)
             loss += loss_distortion * self.C(self.config.system.loss.lambda_distortion)    
 
         if self.config.model.learned_background and self.C(self.config.system.loss.lambda_distortion_bg) > 0:
             loss_distortion_bg = flatten_eff_distloss(out['weights_bg'], out['points_bg'], out['intervals_bg'], out['ray_indices_bg'])
-            self.log('train/loss_distortion_bg', loss_distortion_bg)
+            self.log('train/loss_distortion_bg', loss_distortion_bg, sync_dist=True)
             loss += loss_distortion_bg * self.C(self.config.system.loss.lambda_distortion_bg)        
 
         losses_model_reg = self.model.regularizations(out)
         for name, value in losses_model_reg.items():
-            self.log(f'train/loss_{name}', value)
+            self.log(f'train/loss_{name}', value, sync_dist=True)
             loss_ = value * self.C(self.config.system.loss[f"lambda_{name}"])
             loss += loss_
         
-        self.log('train/inv_s', out['inv_s'], prog_bar=True)
+        self.log('train/inv_s', out['inv_s'], prog_bar=True, sync_dist=True)
 
         for name, value in self.config.system.loss.items():
             if name.startswith('lambda'):
-                self.log(f'train_params/{name}', self.C(value))
+                self.log(f'train_params/{name}', self.C(value), sync_dist=True)
 
-        self.log('train/num_rays', float(self.train_num_rays), prog_bar=True)
+        self.log('train/num_rays', float(self.train_num_rays), prog_bar=True, sync_dist=True)
 
         return {
             'loss': loss
@@ -210,7 +207,7 @@ class NeuSSystem(BaseSystem):
                     for oi, index in enumerate(step_out['index']):
                         out_set[index[0].item()] = {'psnr': step_out['psnr'][oi]}
             psnr = torch.mean(torch.stack([o['psnr'] for o in out_set.values()]))
-            self.log('val/psnr', psnr, prog_bar=True, rank_zero_only=True)         
+            self.log('val/psnr', psnr, prog_bar=True, rank_zero_only=True, sync_dist=True)         
 
     def test_step(self, batch, batch_idx):
         out = self(batch)
@@ -248,7 +245,7 @@ class NeuSSystem(BaseSystem):
                     for oi, index in enumerate(step_out['index']):
                         out_set[index[0].item()] = {'psnr': step_out['psnr'][oi]}
             psnr = torch.mean(torch.stack([o['psnr'] for o in out_set.values()]))
-            self.log('test/psnr', psnr, prog_bar=True, rank_zero_only=True)    
+            self.log('test/psnr', psnr, prog_bar=True, rank_zero_only=True, sync_dist=True)    
 
             self.save_img_sequence(
                 f"it{self.global_step}-test",

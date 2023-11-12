@@ -178,6 +178,13 @@ class VolumeSDF(BaseImplicitGeometry):
                             sdf, points_, grad_outputs=torch.ones_like(sdf),
                             create_graph=True, retain_graph=True, only_inputs=True
                         )[0]
+                        # analytic second-order gradient for curvature
+                        if with_laplace:
+                            grad2 = torch.autograd.grad(
+                                grad, points_, grad_outputs=torch.ones_like(grad),
+                                create_graph=True, retain_graph=True, only_inputs=True
+                            )[0]
+                            laplace = grad2.sum(-1)
                     elif self.grad_type == 'finite_difference':
                         eps = self._finite_difference_eps
                         offsets = torch.as_tensor(

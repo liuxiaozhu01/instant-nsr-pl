@@ -229,7 +229,8 @@ class NeuSModel(BaseModel):
         if self.config.geometry.grad_type == 'finite_difference':
             sdf, sdf_grad, feature, sdf_laplace = self.geometry(positions, with_grad=True, with_feature=True, with_laplace=True)
         else:
-            sdf, sdf_grad, feature = self.geometry(positions, with_grad=True, with_feature=True)
+            # sdf, sdf_grad, feature = self.geometry(positions, with_grad=True, with_feature=True)
+            sdf, sdf_grad, feature, sdf_laplace = self.geometry(positions, with_grad=True, with_feature=True, with_laplace=True)
         normal = F.normalize(sdf_grad, p=2, dim=-1)
         alpha = self.get_alpha(sdf, normal, t_dirs, dists)[...,None]
         rgb = self.texture(feature, t_dirs, normal)
@@ -260,14 +261,14 @@ class NeuSModel(BaseModel):
                 'intervals': dists.view(-1),
                 'ray_indices': ray_indices.view(-1)                
             })
-            if self.config.geometry.grad_type == 'finite_difference':
-                out.update({
-                    'sdf_laplace_samples': sdf_laplace
-                })
-            # if self.config.texture.mlp_network_config.otype == 'LipshitzMLP':
+            # if self.config.geometry.grad_type == 'finite_difference':
             #     out.update({
-            #         'lipshitz_bound_full': self.texture.network.lipshitz_bound_full()
+            #         'sdf_laplace_samples': sdf_laplace
             #     })
+            # always retain sdf_laplace_samples for now
+            out.update({
+                'sdf_laplace_samples': sdf_laplace
+            })
 
         if self.config.learned_background:
             out_bg = self.forward_bg_(rays)
